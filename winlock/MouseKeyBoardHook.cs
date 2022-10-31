@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Reflection.Emit;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
@@ -80,8 +81,24 @@ namespace winlock
             public int dwExtraInfo;
         }
 
+        static MouseKeyBoardHook _instance;
+        public static MouseKeyBoardHook Instance { get { return _instance; } private set { _instance = value; } }
+
         int hHook = 0;
         int _hMouseHook = 0;
+
+        public static event EventHandler<HotKeyEventArgs> HotKeyPressed;
+
+        public bool LockStatus = false;
+
+        //public static void Create(Action<int, int, IntPtr> action)
+        public static void Create()
+        {
+            if (_instance == null)
+            {
+                _instance = new MouseKeyBoardHook();
+            }
+        }
         //开启hook
         public void Hook_Start()
         {
@@ -106,26 +123,63 @@ namespace winlock
         //键盘hook到之后的操作
         private int KeyBoardHookProc(int nCode, int wParam, IntPtr lParam)
         {
+            Console.WriteLine($"KeyBoardHookProc\r\nnCode:{nCode},wParam:{wParam},lParam:{lParam}");
+            //快捷键处理
             if (nCode >= 0)
             {
                 KeyBoardHookStruct kbh = (KeyBoardHookStruct)Marshal.PtrToStructure(lParam, typeof(KeyBoardHookStruct));
-                if (kbh.vkCode == (int)Keys.U || kbh.vkCode == (int)Keys.Alt)  //D
-                {
-                    //如果按下了D 要进行的处理
-                    return CallNextHookEx(hHook, nCode, wParam, lParam);
-                }
+                OnHotKeyPressed(wParam, kbh.vkCode);
+                //if (kbh.vkCode == (int)Keys.U || kbh.vkCode == (int)Keys.Alt)  //D
+                //{
+                //    //如果按下了D 要进行的处理
+                //    return CallNextHookEx(hHook, nCode, wParam, lParam);
+                //}
+            }
+            //未锁屏状态下 不拦截键盘输入
+            if (!LockStatus)
+            {
+                return CallNextHookEx(hHook, nCode, wParam, lParam);
             }
             return 1;
+        }
+        /// <summary>
+        /// 处理快捷键
+        /// </summary>
+        private void OnHotKeyPressed(int wParam, int vkCode)
+        {
+            if (wParam == 261)
+            {
+                Console.WriteLine($"OnHotKeyPressed\r\vkCode:{(Keys)vkCode}");
+                HotKeyEventArgs hotKeyEventArgs = null;
+                if (vkCode == (int)Keys.L && LockStatus == false)
+                {
+                    hotKeyEventArgs = new HotKeyEventArgs(Keys.L, KeyModifiers.Alt);
+                }
+                else if (vkCode == (int)Keys.U)
+                {
+                    hotKeyEventArgs = new HotKeyEventArgs(Keys.U, KeyModifiers.Alt);
+                }
+                if (HotKeyPressed != null && hotKeyEventArgs != null)
+                {
+                    HotKeyPressed(null, hotKeyEventArgs);
+                }
+            }
         }
 
         //鼠标hook到之后的操作
         private int MouseHookProc(int nCode, Int32 wParam, IntPtr lParam)
         {
+            //未锁屏状态下 不拦截鼠标输入
+            if (!LockStatus)
+            {
+                return CallNextHookEx(hHook, nCode, wParam, lParam);
+            }
+            Console.WriteLine($"MouseHookProc\r\nnCode:{nCode},wParam:{wParam},lParam:{lParam}");
             MouseHookStruct MyMouseHookStruct = (MouseHookStruct)Marshal.PtrToStructure(lParam, typeof(MouseHookStruct));
             if (wParam == WM_LBUTTONDOWN || wParam == WM_RBUTTONDOWN)
             {
+                //鼠标左右键按下要进行的处理
                 return 1;
-                //鼠标左键按下要进行的处理
             }
             return CallNextHookEx(_hMouseHook, nCode, wParam, lParam);
         }
